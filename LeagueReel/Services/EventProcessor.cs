@@ -1,32 +1,45 @@
 ﻿using LeagueReel.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
+using System.Diagnostics;
+using System.Linq;
 
-namespace LeagueReel.Helpers
+namespace LeagueReel.Services
 {
     public class EventProcessor
     {
         private int latestEventId = -1;
 
+        private string userName = "";
+
+        public bool HasName = false;
+
+        public int GetLatestEventId => latestEventId;
+
+        public void SetUserName(string name)
+        {
+            userName = name.Trim('"');
+            HasName = true;
+        }
+
         public bool ProcessEvents(string json)
         {
             var eventResponse = JsonConvert.DeserializeObject<EventResponse>(json);
 
-            foreach (var gameEvent in eventResponse.Events)
+            if (latestEventId == -1 && eventResponse?.Events.Count > 1)
+            {
+                Debug.WriteLine("Recording Started during active game, setting ID to the current highest");
+                latestEventId = eventResponse.Events.Max(x => x.EventID);
+                return false;
+            }
+
+            foreach (var gameEvent in eventResponse?.Events)
             {
                 if (gameEvent.EventID > latestEventId)
                 {
-                    // This is a new event. Process it as needed.
-                    
 
-                    // Update latestEventId.
                     latestEventId = gameEvent.EventID;
 
-                    if (gameEvent.KillerName != null && gameEvent.KillerName == "man named Chris")
+                    if (gameEvent.KillerName != null && gameEvent.KillerName == userName)
                     {
                         return true;
                     }
@@ -34,14 +47,12 @@ namespace LeagueReel.Helpers
                     {
                         foreach (var assists in gameEvent.Asisters)
                         {
-                            if (assists == "man named Chris")
+                            if (assists == userName)
                             {
                                 return true;
                             }
                         }
                     }
-
-                    
                 }
             }
 

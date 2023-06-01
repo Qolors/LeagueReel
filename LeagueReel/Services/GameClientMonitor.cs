@@ -41,9 +41,11 @@ namespace LeagueReel.Services
 
                 dashBoardViewModel.GameClientConnected = true;
 
-                if(eventProcessor.ProcessEvents(data))
+                if (!eventProcessor.HasName) eventProcessor.SetUserName(await clientService.GetGameData("https://127.0.0.1:2999/liveclientdata/activeplayername"));
+
+                if (eventProcessor.ProcessEvents(data))
                 {
-                    dashBoardViewModel.OnCounterIncrement();
+                    dashBoardViewModel.OnCounterIncrement(eventProcessor.GetLatestEventId.ToString());
                 }
 
             }

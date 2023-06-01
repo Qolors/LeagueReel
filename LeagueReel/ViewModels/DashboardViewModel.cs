@@ -21,6 +21,8 @@ namespace LeagueReel.ViewModels
         [ObservableProperty]
         private bool gameClientConnected = false;
         [ObservableProperty]
+        private bool isConnecting = true;
+        [ObservableProperty]
         private string gameClientStatus = "Waiting for game client...";
 
         public DashboardViewModel(ScreenRecorderService screenRecorderService, GameClientMonitor gameClientMonitor)
@@ -45,11 +47,11 @@ namespace LeagueReel.ViewModels
             _gameClientMonitor.StopMonitoring();
         }
 
-        public void OnCounterIncrement()
+        public void OnCounterIncrement(string fileName)
         {
             if (_screenRecorderService.IsRecording)
             {
-                Task.Run(() => _screenRecorderService.SaveHighlight("test.avi", 60), _cts.Token);
+                Task.Run(() => _screenRecorderService.SaveHighlight(fileName, 100), _cts.Token);
             }
         }
 
@@ -73,6 +75,7 @@ namespace LeagueReel.ViewModels
         {
             while (!GameClientConnected)
             {
+
                 if (_cts.Token.IsCancellationRequested)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
@@ -82,7 +85,9 @@ namespace LeagueReel.ViewModels
             }
 
             _screenRecorderService.Start();
+
             GameClientStatus = "Connected and Recording";
+            IsConnecting = false;
         }
     }
 

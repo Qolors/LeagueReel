@@ -39,6 +39,7 @@ namespace LeagueReel
 
                 services.AddSingleton(s => new ScreenRecorderService());
                 services.AddSingleton(s => new GameClientMonitor(new GameClientService()));
+                services.AddSingleton(s => new EventProcessor());
 
                 // Main window with navigation
                 services.AddScoped<INavigationWindow, Views.Windows.MainWindow>();

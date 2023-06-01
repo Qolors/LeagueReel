@@ -18,6 +18,20 @@
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <TextBlock FontSize="42" Grid.Column="1" Text="{Binding ViewModel.GameClientStatus}" />
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:ProgressRing HorizontalAlignment="Center" x:Name="progRing" IsEnabled="{Binding ViewModel.IsConnecting}" Grid.Column="0" Grid.Row="0" />
+        <StackPanel Orientation="Horizontal" Grid.Column="0" Grid.Row="1">
+            <TextBlock Text="{Binding ViewModel.GameClientStatus}" FontSize="24" Margin="0,0,20,0" />
+            <TextBlock Text="✅" x:Name="checkMark" Visibility="Collapsed" />
+        </StackPanel>
+        
+
+
+
     </Grid>
 </ui:UiPage>
+
