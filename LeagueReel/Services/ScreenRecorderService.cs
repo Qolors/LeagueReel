@@ -8,24 +8,29 @@ using System.Linq;
 using System.Threading.Tasks;
 using NAudio.Wave;
 using System.Windows.Forms;
-using SharpAvi;
 using SharpAvi.Output;
 using SharpAvi.Codecs;
-
+using System.Threading;
 namespace LeagueReel.Services
 {
     public class ScreenRecorderService
     {
+        private IAviVideoStream videoStream;
+        private IAviAudioStream audioStream;
+        private AviWriter writer;
+
         private const int FrameRate = 30;
         private const int BufferSize = FrameRate * 15;
         private const PixelFormat CapturePixelFormat = PixelFormat.Format32bppArgb;
         private ImageFormat CompressionFormat = ImageFormat.Jpeg;
         private ConcurrentQueue<byte[]> _frameBuffer = new ConcurrentQueue<byte[]>();
         private ConcurrentQueue<byte[]> _audioBuffer = new ConcurrentQueue<byte[]>();
-        private WaveInEvent waveSource = null;
+        private ConcurrentQueue<DateTime> _frameTimestamps = new ConcurrentQueue<DateTime>();
+        private ConcurrentQueue<DateTime> _audioTimestamps = new ConcurrentQueue<DateTime>();
         private VideoCompressorService videoCompressorService;
+        private WasapiLoopbackCapture captureInstance = null;
+        private WaveFileWriter recordedAudioWriter = null;
         public volatile bool IsRecording = false;
-        private bool isSaving = false;
 
         public ScreenRecorderService()
         {
@@ -49,14 +54,37 @@ namespace LeagueReel.Services
         {
             var bounds = Screen.PrimaryScreen.Bounds;
 
-            waveSource = new WaveInEvent();
-            waveSource.DeviceNumber = 0;
-            waveSource.WaveFormat = new WaveFormat(44100, 2);
-            waveSource.DataAvailable += WaveSource_DataAvailable;
-            waveSource.StartRecording();
+            captureInstance = new WasapiLoopbackCapture();
+
+            captureInstance.WaveFormat = new WaveFormat(44100, 16, 2);
+
+            captureInstance.DataAvailable += WaveSource_DataAvailable;
+
+            captureInstance.RecordingStopped += (s, a) =>
+            {
+                recordedAudioWriter.Dispose();
+                recordedAudioWriter = null;
+                captureInstance.Dispose();
+            };
+
+            captureInstance.StartRecording();
+            Task.Run(() => CaptureFrame());
 
             while (IsRecording)
             {
+                // Wait for the next frame to be captured
+            }
+
+            captureInstance.StopRecording();
+        }
+
+
+        private async Task CaptureFrame()
+        {
+            while (IsRecording)
+            {
+                var bounds = Screen.PrimaryScreen.Bounds;
+
                 using var bitmap = new Bitmap(bounds.Width, bounds.Height, CapturePixelFormat);
 
                 // capture frame
@@ -73,89 +101,102 @@ namespace LeagueReel.Services
                 // add frame to buffer
                 _frameBuffer.Enqueue(compressedFrame);
 
+                _frameTimestamps.Enqueue(DateTime.UtcNow);
+
                 while (_frameBuffer.Count > BufferSize)
                 {
                     _frameBuffer.TryDequeue(out var _);
+                    _frameTimestamps.TryDequeue(out var _);
                 }
-            }
 
-            waveSource.StopRecording();
-            waveSource.Dispose();
-            waveSource = null;
+                await Task.Delay(1000 / FrameRate); // Wait for the next frame
+            }
         }
 
         public void SaveHighlight(string outputFilename, int quality)
         {
-            // copy frames from buffer to local list2
-            //isSaving = true;
-
-            // copy frames from buffer to local list
-            var frames = _frameBuffer.ToList();
-            var audioFrames = _audioBuffer.ToList();
-
             var aviFile = $"{outputFilename}.avi";
 
             var width = Screen.PrimaryScreen.Bounds.Width;
             var height = Screen.PrimaryScreen.Bounds.Height;
 
-            using (var writer = new AviWriter(aviFile)
+            using (writer = new AviWriter(aviFile)
             {
-                FramesPerSecond = 30,
+                FramesPerSecond = FrameRate,
                 EmitIndex1 = true,
             })
             {
                 var encoder = new MJpegWpfVideoEncoder(width, height, quality);
-                var videoStream = writer.AddEncodingVideoStream(encoder, true, width, height);
-                var audioStream = writer.AddAudioStream(channelCount: 2, samplesPerSecond: 44100);
+                videoStream = writer.AddEncodingVideoStream(encoder, true, width, height);
+                audioStream = writer.AddAudioStream(2, 44100, 16);
 
-                
-
-                int frameIndex = 0, audioIndex = 0;
-                while (frameIndex < frames.Count && audioIndex < audioFrames.Count)
+                while (!_frameBuffer.IsEmpty && !_audioBuffer.IsEmpty)
                 {
-                    using var ms = new MemoryStream(frames[frameIndex++]);
-                    var audioFrame = audioFrames[audioIndex++];
+                    if (_frameTimestamps.TryPeek(out var frameTimestamp) &&
+                        _audioTimestamps.TryPeek(out var audioTimestamp))
+                    {
+                        if (frameTimestamp <= audioTimestamp)
+                        {
+                            // Frame should be written
+                            if (_frameBuffer.TryDequeue(out var frameData))
+                            {
+                                _frameTimestamps.TryDequeue(out _);
 
-                    using var bitmap = new Bitmap(ms);
-                    
+                                using var ms = new MemoryStream(frameData);
+                                using var bitmap = new Bitmap(ms);
 
-                    var bits = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
-                    int bytes = Math.Abs(bits.Stride) * bitmap.Height;
-                    var frameData = new byte[bytes];
-                    System.Runtime.InteropServices.Marshal.Copy(bits.Scan0, frameData, 0, frameData.Length);
-                    bitmap.UnlockBits(bits);
+                                var bits = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+                                int bytes = Math.Abs(bits.Stride) * bitmap.Height;
+                                var frameDataBytes = new byte[bytes];
+                                System.Runtime.InteropServices.Marshal.Copy(bits.Scan0, frameDataBytes, 0, frameDataBytes.Length);
+                                bitmap.UnlockBits(bits);
 
-                    videoStream.WriteFrame(true, frameData, 0, frameData.Length);
-                    audioStream.WriteBlock(audioFrame, 0, audioFrame.Length);
+                                videoStream.WriteFrame(true, frameDataBytes, 0, frameDataBytes.Length);
+                            }
+                        }
+                        else
+                        {
+                            // Audio should be written
+                            if (_audioBuffer.TryDequeue(out var audioData))
+                            {
+                                _audioTimestamps.TryDequeue(out _);
+                                audioStream.WriteBlock(audioData, 0, audioData.Length);
+                            }
+                        }
+                    }
                 }
             }
 
             Debug.WriteLine("Starting Compression");
-
-            // Task.Run(async () => await videoCompressorService.ConvertVideoAsync(aviFile, $"{outputFilename}.mp4"));
         }
+
 
         private void WaveSource_DataAvailable(object sender, WaveInEventArgs e)
         {
+            //File.WriteAllBytes("audio.raw", e.Buffer);
+
+            if (audioStream == null) return;
+
             var audioData = new byte[e.BytesRecorded];
             Array.Copy(e.Buffer, audioData, audioData.Length);
             _audioBuffer.Enqueue(audioData);
+            _audioTimestamps.Enqueue(DateTime.UtcNow);
 
-            while (_audioBuffer.Count > BufferSize)
-            {
-                _audioBuffer.TryDequeue(out var _);
-            }
         }
 
         public void Stop()
         {
             IsRecording = false;
-            if (waveSource != null)
+            if (captureInstance != null)
             {
-                waveSource.StopRecording();
-                waveSource.Dispose();
-                waveSource = null;
+                captureInstance.StopRecording();
+                captureInstance.Dispose();
+                captureInstance = null;
+
+                recordedAudioWriter.Dispose();
+                recordedAudioWriter = null;
             }
         }
+
     }
 }
