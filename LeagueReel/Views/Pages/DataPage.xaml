@@ -6,6 +6,7 @@
     xmlns:local="clr-namespace:LeagueReel.Views.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="clr-namespace:LeagueReel.Models"
+    xmlns:gif="http://wpfanimatedgif.codeplex.com"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     Title="DataPage"
     d:DataContext="{d:DesignInstance local:DataPage,
@@ -17,25 +18,24 @@
     mc:Ignorable="d">
 
     <Grid>
-        <ui:VirtualizingItemsControl
-            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-            ItemsSource="{Binding ViewModel.Colors, Mode=OneWay}"
-            VirtualizingPanel.CacheLengthUnit="Item">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="{x:Type models:DataColor}">
-                    <ui:Button
-                        Width="80"
-                        Height="80"
-                        Margin="2"
-                        Padding="0"
-                        HorizontalAlignment="Stretch"
-                        VerticalAlignment="Stretch"
-                        Appearance="Secondary"
-                        Background="{Binding Color, Mode=OneWay}"
-                        FontSize="25"
-                        Icon="Fluent24" />
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ui:VirtualizingItemsControl>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Orientation="Vertical">
+            <TextBlock Text="Last Game's Highlights" FontSize="24" />
+            <ListView SelectionChanged="listView_SelectionChanged" ItemsSource="{Binding ViewModel.GifFiles}" x:Name="listView">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="5" Orientation="Horizontal">
+                            <ui:SymbolIcon FontSize="18" Symbol="VideoClipMultiple16"/>
+                            <TextBlock FontSize="18" MinWidth="250" Text="{Binding Path=FilePath}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </StackPanel>
+        
+        <Image Grid.Column="1" MaxWidth="450" Source="{Binding ViewModel.CurrentFrame}" />
     </Grid>
 </ui:UiPage>

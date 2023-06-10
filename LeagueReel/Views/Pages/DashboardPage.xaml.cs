@@ -23,6 +23,7 @@ namespace LeagueReel.Views.Pages
 
         public Task RotateRing()
         {
+            //TODO --> Change this to async maybe?
             while(ViewModel.IsConnecting) { }
 
             progRing.Dispatcher.Invoke(() => progRing.Visibility = System.Windows.Visibility.Collapsed);

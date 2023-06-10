@@ -6,9 +6,6 @@ using Wpf.Ui.Mvvm.Contracts;
 
 namespace LeagueReel.Views.Windows
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : INavigationWindow
     {
         public ViewModels.MainWindowViewModel ViewModel
@@ -49,9 +46,6 @@ namespace LeagueReel.Views.Windows
 
         #endregion INavigationWindow methods
 
-        /// <summary>
-        /// Raises the closed event.
-        /// </summary>
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);

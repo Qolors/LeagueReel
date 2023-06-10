@@ -16,6 +16,8 @@ namespace LeagueReel.Services
         private readonly GameClientService clientService;
         private Timer timer;
         private EventProcessor eventProcessor;
+        //TODO --> This is kind of a hack for now, need to implement a better way to adjust the timer
+        private bool adjustTimer = false;
 
         public GameClientMonitor(GameClientService clientService)
         {
@@ -39,20 +41,45 @@ namespace LeagueReel.Services
             {
                 var data = await clientService.GetGameData("https://127.0.0.1:2999/liveclientdata/eventdata");
 
+                if (adjustTimer)
+                {
+                    timer.Change(TimeSpan.Zero, TimeSpan.FromSeconds(5));
+                    adjustTimer = false;
+                }
+
+                Debug.WriteLine("Trying");
+
                 dashBoardViewModel.GameClientConnected = true;
 
                 if (!eventProcessor.HasName) eventProcessor.SetUserName(await clientService.GetGameData("https://127.0.0.1:2999/liveclientdata/activeplayername"));
 
                 if (eventProcessor.ProcessEvents(data))
                 {
-                    dashBoardViewModel.OnCounterIncrement(eventProcessor.GetLatestEventId.ToString());
+                    Debug.WriteLine("Processed");
+                    if (eventProcessor.HasGameEnded)
+                    {
+                        Debug.WriteLine("Game End");
+                        dashBoardViewModel.Flush();
+                        eventProcessor.Flush();
+                        
+                    }
+                    else
+                    {
+                        dashBoardViewModel.OnCounterIncrement(eventProcessor.GetLatestEventId.ToString());
+                    }
                 }
-
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Failed to get data: " + ex.Message);
-                dashBoardViewModel.GameClientConnected = false;
+                Debug.WriteLine("No Game Client Connection");
+                dashBoardViewModel.Flush();
+                eventProcessor.Flush();
+                if (!adjustTimer)
+                {
+                    timer.Change(TimeSpan.Zero, TimeSpan.FromSeconds(30));
+                    adjustTimer = true;
+                }
+                
             }
         }
     }

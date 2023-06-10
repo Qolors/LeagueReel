@@ -16,15 +16,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="MediaToolkit" Version="1.1.0.1" />
-    <PackageReference Include="NAudio" Version="2.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="SharpAvi" Version="3.0.1" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.0.1" />
     <PackageReference Include="WPF-UI" Version="2.0.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.1" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.0.0" />
-    <PackageReference Include="Xabe.FFmpeg" Version="5.2.6" />
-    <PackageReference Include="Xabe.FFmpeg.Downloader" Version="5.2.6" />
+    <PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
   </ItemGroup>
 
   <ItemGroup>

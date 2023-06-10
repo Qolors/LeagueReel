@@ -2,7 +2,13 @@
 using LeagueReel.Models;
 using System;
 using System.Collections.Generic;
-using System.Windows.Media;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Wpf.Ui.Common.Interfaces;
 
 namespace LeagueReel.ViewModels
@@ -12,34 +18,67 @@ namespace LeagueReel.ViewModels
         private bool _isInitialized = false;
 
         [ObservableProperty]
-        private IEnumerable<DataColor> _colors;
+        private BitmapSource _currentFrame;
+
+        private List<BitmapSource> _frames = new List<BitmapSource>();
+        private DispatcherTimer _timer = new DispatcherTimer();
+        private int _currentFrameIndex;
+
+        [ObservableProperty]
+        private ObservableCollection<GifFile> gifFiles;
+
+        [ObservableProperty]
+        private BitmapImage selectedGifFile;
 
         public void OnNavigatedTo()
         {
             if (!_isInitialized)
-                InitializeViewModel();
+            {
+                _timer.Interval = TimeSpan.FromMilliseconds(50);
+                _timer.Tick += Timer_Tick;
+            }
+            InitializeViewModel();
         }
 
         public void OnNavigatedFrom()
         {
         }
 
+        private void Timer_Tick(object sender, EventArgs e)
+        {
+            _currentFrameIndex = (_currentFrameIndex + 1) % _frames.Count;
+            CurrentFrame = _frames[_currentFrameIndex];
+        }
+
+        public async void LoadGifAsync(string path)
+        {
+            await Task.Run(() =>
+            {
+                Debug.WriteLine("Doin it");
+                var gifDecoder = new GifBitmapDecoder(new Uri(path), BitmapCreateOptions.None, BitmapCacheOption.Default);
+                foreach (BitmapFrame frame in gifDecoder.Frames)
+                {
+                    var bmpFrame = frame;
+                    bmpFrame.Freeze();
+                    _frames.Add(bmpFrame);
+                }
+            });
+
+            _timer.Start();
+        }
+
+
+
         private void InitializeViewModel()
         {
-            var random = new Random();
-            var colorCollection = new List<DataColor>();
+            GifFiles = new ObservableCollection<GifFile>();
+            //TODO --> Move this to a service
+            string folderPath = "C:\\LeagueGif";
 
-            for (int i = 0; i < 8192; i++)
-                colorCollection.Add(new DataColor
-                {
-                    Color = new SolidColorBrush(Color.FromArgb(
-                        (byte)200,
-                        (byte)random.Next(0, 250),
-                        (byte)random.Next(0, 250),
-                        (byte)random.Next(0, 250)))
-                });
-
-            Colors = colorCollection;
+            foreach (var file in Directory.GetFiles(folderPath, "*.gif"))
+            {
+                GifFiles.Add(new GifFile { FilePath = file });
+            }
 
             _isInitialized = true;
         }

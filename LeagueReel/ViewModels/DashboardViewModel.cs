@@ -1,6 +1,4 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using LeagueReel.Models;
 using LeagueReel.Services;
 using System;
 using System.Diagnostics;
@@ -36,22 +34,23 @@ namespace LeagueReel.ViewModels
             if (!_isInitialized)
             {
                 _isInitialized = true;
-                _gameClientMonitor.StartMonitoring(TimeSpan.FromSeconds(10), this);
+                _gameClientMonitor.StartMonitoring(TimeSpan.FromSeconds(5), this);
                 Task.Run(() => TestLeagueConnection());
             }
         }
 
         public void OnNavigatedFrom()
         {
-            _cts.Cancel();
-            _gameClientMonitor.StopMonitoring();
+            //TODO --> Determine if this is needed
+            //_cts.Cancel();
+            //_gameClientMonitor.StopMonitoring();
         }
 
         public void OnCounterIncrement(string fileName)
         {
             if (_screenRecorderService.IsRecording)
             {
-                Task.Run(() => _screenRecorderService.SaveHighlight(fileName, 100), _cts.Token);
+                Task.Run(() => _screenRecorderService.SaveHighlight(fileName), _cts.Token);
             }
         }
 
@@ -63,12 +62,17 @@ namespace LeagueReel.ViewModels
             }
             catch (OperationCanceledException)
             {
-                // Task was cancelled, handle if necessary.
             }
             catch (Exception ex)
             {
                 GameClientStatus = "Waiting for game client...";
             }
+        }
+
+        private void StopRecording()
+        {
+            _screenRecorderService.Stop();
+            Task.Run(() => WaitForGameClient());
         }
 
         private async Task WaitForGameClient()
@@ -81,13 +85,27 @@ namespace LeagueReel.ViewModels
                     _cts.Token.ThrowIfCancellationRequested();
                 }
 
-                await Task.Delay(4000, _cts.Token);
+                Debug.WriteLine("Not Connected Yet");
+
+                await Task.Delay(15000, _cts.Token);
             }
 
             _screenRecorderService.Start();
 
             GameClientStatus = "Connected and Recording";
             IsConnecting = false;
+        }
+
+        public void Flush()
+        {
+            GameClientStatus = "Waiting for game to start...";
+            IsConnecting = true;
+            GameClientConnected = false;
+
+            if (_screenRecorderService.IsRecording)
+            {
+                StopRecording();
+            }
         }
     }
 

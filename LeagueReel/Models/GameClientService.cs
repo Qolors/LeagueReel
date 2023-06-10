@@ -17,7 +17,7 @@ namespace LeagueReel.Models
         {
             var handler = new HttpClientHandler();
 
-            // Here's where you handle the custom certificate validation
+            //TODO --> Saving this for reference but eventually remove
             //handler.ServerCertificateCustomValidationCallback =
             //    (HttpRequestMessage httpRequestMessage, X509Certificate2 cert, X509Chain chain, SslPolicyErrors errors) =>
             //    {
@@ -26,7 +26,7 @@ namespace LeagueReel.Models
             //        return cert.Equals(validCert);
             //    };
 
-            // In case you want to ignore SSL errors (NOT RECOMMENDED FOR PRODUCTION)
+            // TODO --> Remove this when we have a valid cert
             handler.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
 
             client = new HttpClient(handler);

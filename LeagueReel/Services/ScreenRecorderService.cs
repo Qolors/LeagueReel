@@ -1,41 +1,35 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using NAudio.Wave;
+using System.Windows.Controls;
 using System.Windows.Forms;
-using SharpAvi.Output;
-using SharpAvi.Codecs;
-using System.Threading;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Gif;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+
 namespace LeagueReel.Services
 {
+    //TODO --> FrameRate and frameDelay do not make sense, kind of hacked to get a smooth gif
     public class ScreenRecorderService
     {
-        private IAviVideoStream videoStream;
-        private IAviAudioStream audioStream;
-        private AviWriter writer;
-
-        private const int FrameRate = 30;
-        private const int BufferSize = FrameRate * 15;
+        private const int FrameRate = 33;
+        private const int BufferSize = FrameRate * 5;
         private const PixelFormat CapturePixelFormat = PixelFormat.Format32bppArgb;
         private ImageFormat CompressionFormat = ImageFormat.Jpeg;
         private ConcurrentQueue<byte[]> _frameBuffer = new ConcurrentQueue<byte[]>();
-        private ConcurrentQueue<byte[]> _audioBuffer = new ConcurrentQueue<byte[]>();
         private ConcurrentQueue<DateTime> _frameTimestamps = new ConcurrentQueue<DateTime>();
-        private ConcurrentQueue<DateTime> _audioTimestamps = new ConcurrentQueue<DateTime>();
-        private VideoCompressorService videoCompressorService;
-        private WasapiLoopbackCapture captureInstance = null;
-        private WaveFileWriter recordedAudioWriter = null;
         public volatile bool IsRecording = false;
 
         public ScreenRecorderService()
         {
-            videoCompressorService = new VideoCompressorService();
-            Task.Run(async () => await FetchFFmpeg());
+            // Start the recording task in the background
         }
 
         public void Start()
@@ -45,158 +39,107 @@ namespace LeagueReel.Services
             Task.Run(() => Recording());
         }
 
-        public async Task FetchFFmpeg()
-        {
-            await videoCompressorService.InitializeAsync();
-        }
-
-        private void Recording()
+        private async Task Recording()
         {
             var bounds = Screen.PrimaryScreen.Bounds;
 
-            captureInstance = new WasapiLoopbackCapture();
-
-            captureInstance.WaveFormat = new WaveFormat(44100, 16, 2);
-
-            captureInstance.DataAvailable += WaveSource_DataAvailable;
-
-            captureInstance.RecordingStopped += (s, a) =>
-            {
-                recordedAudioWriter.Dispose();
-                recordedAudioWriter = null;
-                captureInstance.Dispose();
-            };
-
-            captureInstance.StartRecording();
-            Task.Run(() => CaptureFrame());
-
             while (IsRecording)
             {
-                // Wait for the next frame to be captured
-            }
+                await CaptureFrame(bounds);
 
-            captureInstance.StopRecording();
-        }
-
-
-        private async Task CaptureFrame()
-        {
-            while (IsRecording)
-            {
-                var bounds = Screen.PrimaryScreen.Bounds;
-
-                using var bitmap = new Bitmap(bounds.Width, bounds.Height, CapturePixelFormat);
-
-                // capture frame
-                using (var g = Graphics.FromImage(bitmap))
-                {
-                    g.CopyFromScreen(Point.Empty, Point.Empty, bounds.Size);
-                }
-
-                // compress frame
-                using var ms = new MemoryStream();
-                bitmap.Save(ms, CompressionFormat);
-                var compressedFrame = ms.ToArray();
-
-                // add frame to buffer
-                _frameBuffer.Enqueue(compressedFrame);
-
-                _frameTimestamps.Enqueue(DateTime.UtcNow);
-
-                while (_frameBuffer.Count > BufferSize)
-                {
-                    _frameBuffer.TryDequeue(out var _);
-                    _frameTimestamps.TryDequeue(out var _);
-                }
-
-                await Task.Delay(1000 / FrameRate); // Wait for the next frame
+                // Wait for the next frame
+                await Task.Delay(1000 / FrameRate);
             }
         }
 
-        public void SaveHighlight(string outputFilename, int quality)
+        private async Task CaptureFrame(System.Drawing.Rectangle bounds)
         {
-            var aviFile = $"{outputFilename}.avi";
-
-            var width = Screen.PrimaryScreen.Bounds.Width;
-            var height = Screen.PrimaryScreen.Bounds.Height;
-
-            using (writer = new AviWriter(aviFile)
+            using (var bitmap = new System.Drawing.Bitmap(bounds.Width, bounds.Height, CapturePixelFormat))
             {
-                FramesPerSecond = FrameRate,
-                EmitIndex1 = true,
-            })
-            {
-                var encoder = new MJpegWpfVideoEncoder(width, height, quality);
-                videoStream = writer.AddEncodingVideoStream(encoder, true, width, height);
-                audioStream = writer.AddAudioStream(2, 44100, 16);
-
-                while (!_frameBuffer.IsEmpty && !_audioBuffer.IsEmpty)
+                // Capture frame
+                using (var g = System.Drawing.Graphics.FromImage(bitmap))
                 {
-                    if (_frameTimestamps.TryPeek(out var frameTimestamp) &&
-                        _audioTimestamps.TryPeek(out var audioTimestamp))
+                    g.CopyFromScreen(System.Drawing.Point.Empty, System.Drawing.Point.Empty, bounds.Size);
+
+                    // Compress frame
+                    using (var ms = new MemoryStream())
                     {
-                        if (frameTimestamp <= audioTimestamp)
-                        {
-                            // Frame should be written
-                            if (_frameBuffer.TryDequeue(out var frameData))
-                            {
-                                _frameTimestamps.TryDequeue(out _);
+                        bitmap.Save(ms, CompressionFormat);
+                        var compressedFrame = ms.ToArray();
 
-                                using var ms = new MemoryStream(frameData);
-                                using var bitmap = new Bitmap(ms);
-
-                                var bits = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
-                                int bytes = Math.Abs(bits.Stride) * bitmap.Height;
-                                var frameDataBytes = new byte[bytes];
-                                System.Runtime.InteropServices.Marshal.Copy(bits.Scan0, frameDataBytes, 0, frameDataBytes.Length);
-                                bitmap.UnlockBits(bits);
-
-                                videoStream.WriteFrame(true, frameDataBytes, 0, frameDataBytes.Length);
-                            }
-                        }
-                        else
-                        {
-                            // Audio should be written
-                            if (_audioBuffer.TryDequeue(out var audioData))
-                            {
-                                _audioTimestamps.TryDequeue(out _);
-                                audioStream.WriteBlock(audioData, 0, audioData.Length);
-                            }
-                        }
+                        // Add frame to buffer
+                        _frameBuffer.Enqueue(compressedFrame);
+                        _frameTimestamps.Enqueue(DateTime.UtcNow);
                     }
                 }
             }
 
-            Debug.WriteLine("Starting Compression");
+            // Remove old frames if buffer is full
+            while (_frameBuffer.Count > BufferSize)
+            {
+                _frameBuffer.TryDequeue(out var _);
+                _frameTimestamps.TryDequeue(out var _);
+            }
         }
 
 
-        private void WaveSource_DataAvailable(object sender, WaveInEventArgs e)
+
+        public void SaveHighlight(string outputFilename)
         {
-            //File.WriteAllBytes("audio.raw", e.Buffer);
+            var gifFile = $"C:\\LeagueGif\\{outputFilename}.gif";
 
-            if (audioStream == null) return;
+            var width = 600;
+            var height = 600;
 
-            var audioData = new byte[e.BytesRecorded];
-            Array.Copy(e.Buffer, audioData, audioData.Length);
-            _audioBuffer.Enqueue(audioData);
-            _audioTimestamps.Enqueue(DateTime.UtcNow);
+            var options = new ResizeOptions
+            {
+                Mode = ResizeMode.Pad,
+                Size = new SixLabors.ImageSharp.Size(width, height),
+            };
 
+            var frameDelay = 8;
+
+            using (var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(width, height))
+            {
+
+                while (!_frameBuffer.IsEmpty)
+                {
+                    if (_frameBuffer.TryDequeue(out var frameData) && _frameTimestamps.TryDequeue(out var timestamp))
+                    {
+                        using (var imgFrame = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(frameData))
+                        {
+                            imgFrame.Mutate(x => x.Resize(options));
+
+                            var metadata = imgFrame.Frames.RootFrame.Metadata.GetFormatMetadata(SixLabors.ImageSharp.Formats.Gif.GifFormat.Instance);
+                            metadata.FrameDelay = frameDelay;
+                            image.Frames.AddFrame(imgFrame.Frames.RootFrame);
+                        }
+                    }
+                }
+
+
+                image.SaveAsGif(gifFile, new SixLabors.ImageSharp.Formats.Gif.GifEncoder 
+                { 
+                    ColorTableMode = SixLabors.ImageSharp.Formats.Gif.GifColorTableMode.Global,
+                    
+                });
+            }
+
+            Debug.WriteLine("Finished creating GIF");
         }
+
+
 
         public void Stop()
         {
             IsRecording = false;
-            if (captureInstance != null)
+            //empty out the buffer
+            while (!_frameBuffer.IsEmpty)
             {
-                captureInstance.StopRecording();
-                captureInstance.Dispose();
-                captureInstance = null;
-
-                recordedAudioWriter.Dispose();
-                recordedAudioWriter = null;
+                _frameBuffer.TryDequeue(out var _);
+                _frameTimestamps.TryDequeue(out var _);
             }
         }
-
     }
 }
+

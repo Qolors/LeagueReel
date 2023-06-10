@@ -13,6 +13,8 @@ namespace LeagueReel.Services
 
         public bool HasName = false;
 
+        public bool HasGameEnded = false;
+
         public int GetLatestEventId => latestEventId;
 
         public void SetUserName(string name)
@@ -21,9 +23,18 @@ namespace LeagueReel.Services
             HasName = true;
         }
 
+        public void Flush()
+        {
+            latestEventId = -1;
+            HasName = false;
+            HasGameEnded = false;
+        }
+
         public bool ProcessEvents(string json)
         {
             var eventResponse = JsonConvert.DeserializeObject<EventResponse>(json);
+
+            Debug.WriteLine(latestEventId);
 
             if (latestEventId == -1 && eventResponse?.Events.Count > 1)
             {
@@ -52,6 +63,12 @@ namespace LeagueReel.Services
                                 return true;
                             }
                         }
+                    }
+                    else if (gameEvent.EventName == "GameEnd")
+                    {
+                        Debug.WriteLine("Game Ended");
+                        HasGameEnded = true;
+                        return true;
                     }
                 }
             }
